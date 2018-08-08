@@ -17,8 +17,8 @@ import pymysql
 # load properties from file
 config = configparser.ConfigParser()
 # THIS HAS TO BE CHANGED ON LINUX !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-config.read('cottage_monitor_properties.ini')
-#config.read('//home/pi/Python_Scripts/cottage_monitor/cottage_monitor_properties.ini')
+#config.read('cottage_monitor_properties.ini')
+config.read('//home/pi/Python_Scripts/cottage_monitor/cottage_monitor_properties.ini')
 
 # DEBUG switch  0 = Production, 1 = debug
 debugMode = int(config['general']['DebugMode'])

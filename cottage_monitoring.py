@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/local/bin/python3
 ## Monitoring application for NOAA tide and weather data
 ## CO-OPS API For Data Retrieval - http://tidesandcurrents.noaa.gov/api/
 
@@ -18,6 +18,7 @@
 ## 5/7/17 - Fixed bug which says NONE in subject & email on end of tide event
 ## 10/24/17 - Added site URLs for reference in emails
 # 1/3/18 - Added properties file, exception logging improvements, openDBConnection function
+# 8/7/18 - Added today's tides to alert emails, removed previously commented-out stuff
 
 ## TO DO
 ## Add to emails: difference increasing or decreasing, reference tide points, next high/low tide
@@ -34,8 +35,8 @@ import datetime
 # load properties from file
 config = configparser.ConfigParser()
 # THIS HAS TO BE CHANGED ON LINUX !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-config.read('cottage_monitor_properties.ini')
-#config.read('//home/pi/Python_Scripts/cottage_monitor/cottage_monitor_properties.ini')
+#config.read('cottage_monitor_properties.ini')
+config.read('//home/pi/Python_Scripts/cottage_monitor/cottage_monitor_properties.ini')
 
 # DEBUG switch  0 = Production, 1 = debug
 debugMode = int(config['general']['DebugMode'])
@@ -78,41 +79,6 @@ import cottage_monitor_sql as sql
 if debugMode == 1:
     logger.info("############################# DEBUG Mode #############################")
 
-
-######### to be removed once property file confirmed to be working ###########
-
-## DEBUG switch  0 = Production, 1 = debug
-#debugMode = 0
-
-#### Logger configuration
-##logger = logging.getLogger('cottage_monitoring.py')
-#### Log name and directory.  Needs to be changed if running on Windows box
-##handler = logging.FileHandler('//home/pi/logs/cottage_monitor/cottage_monitoring.log')
-##formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
-##handler.setFormatter(formatter)
-##logger.addHandler(handler)
-##logger.setLevel(logging.DEBUG)
-
-## API Properties
-##station_id = "8573927"
-##datum= "MLLW"
-##units = "english"
-##time_zone = "gmt"
-##format1 = "json"
-##application = "loeliger_pi"
-##base_url = "http://tidesandcurrents.noaa.gov/api/datagetter?"
-##homepage_url = "https://tidesandcurrents.noaa.gov/stationhome.html?id="
-
-#### Email properties
-##eric = 'jon.loeliger@gmail.com'
-##rick = 'rick.loeliger@gmail.com'
-##if debugMode == 0:
-##    recipients = [eric,rick]
-##else:
-##    recipients = [eric]
-##gmail_user = 'loeliger.raspi@gmail.com'
-##gmail_password = 'C0ttage#19'
-##smtpserver = smtplib.SMTP('smtp.gmail.com:587')
 
 ## Initialize counter to keep track of how many loops the application does on a single run
 loops = int(0)
@@ -163,9 +129,9 @@ def getNoaaDataStub(product, date):
 
     if product == 'water_level':
         ## no event
-        response_text = '{"data":[{"f":"0,0,0,0","q":"p","s":"0.013","t":"2017-03-1606:42","v":"2"}],"metadata":{"id":"8573927","lat":"39.5267","lon":"-75.8100","name":"ChesapeakeCity"}}'
+        #response_text = '{"data":[{"f":"0,0,0,0","q":"p","s":"0.013","t":"2017-03-1606:42","v":"2"}],"metadata":{"id":"8573927","lat":"39.5267","lon":"-75.8100","name":"ChesapeakeCity"}}'
         ## high tide event
-        #response_text = '{"data":[{"f":"0,0,0,0","q":"p","s":"0.013","t":"2017-03-1606:42","v":"5"}],"metadata":{"id":"8573927","lat":"39.5267","lon":"-75.8100","name":"ChesapeakeCity"}}'
+        response_text = '{"data":[{"f":"0,0,0,0","q":"p","s":"0.013","t":"2017-03-1606:42","v":"5"}],"metadata":{"id":"8573927","lat":"39.5267","lon":"-75.8100","name":"ChesapeakeCity"}}'
         ## low tide event
         #response_text = '{"data":[{"f":"0,0,0,0","q":"p","s":"0.013","t":"2017-03-1606:42","v":"0"}],"metadata":{"id":"8573927","lat":"39.5267","lon":"-75.8100","name":"ChesapeakeCity"}}'
         
@@ -190,10 +156,31 @@ def getNoaaDataStub(product, date):
     logger.debug("Exiting getNoaaDataStub function")
     return(parsed_response)
 
+# function to pretty print high/low tide description strings
+## reference
+##        {
+##            "t": "2018-08-08 06:01",
+##            "type": "L",
+##            "v": "0.730"
+##        }
+def getTideString(raw):
+    if raw['type'] == "L":
+        tide_name = "Low "
+    elif raw['type'] == 'H':
+        tide_name = "High"
+    else:
+        tide_name = "Undefined"
+
+    tide_string = "%s tide at %s" % (tide_name, raw['t'])
+    return tide_string
+
+
+
 
 ## Example URLs
 ## http://tidesandcurrents.noaa.gov/api/datagetter?station=8573927&product=water_level&datum=MLLW&date=latest&units=english&time_zone=gmt&format=json&application=loeliger_pi
 ## http://tidesandcurrents.noaa.gov/api/datagetter?station=8573927&product=predictions&datum=MLLW&date=latest&units=english&time_zone=gmt&format=json&application=loeliger_pi
+## http://tidesandcurrents.noaa.gov/api/datagetter?station=8573927&product=predictions&datum=MLLW&interval=hilo&date=today&units=english&time_zone=lst_ldt&format=json&application=loeliger_pi
 
 ## Tide Reference Information
 ##+2ft - Over bulkhead
@@ -204,6 +191,10 @@ def getNoaaDataStub(product, date):
 
 try:
     logger.info("*****************Begin Cottage Monitoring script*********************")
+    ## instantiate email_required variable
+    email_required = 0
+    emailSent = False
+    
     # open connection to the database
     sql.openDBConnection()
 
@@ -229,8 +220,7 @@ try:
         logger.info("Actual Time: %s" % actual_time)
 
 
-
-            
+ 
     ## Call API to get predicted water level
     product = "predictions"
     logger.debug("Product: %s" % product)
@@ -250,6 +240,33 @@ try:
         if prediction_time == actual_time:
             predicted_level = float(x['v'])
             logger.info("Predicted Level: %s" % predicted_level)
+
+
+    ## Call API to get today's tides
+            ## technically don't have to call this until needing to send an email,
+            ## but put here for error handling situations
+    product = "predictions&interval=hilo"
+    logger.debug("Product: %s" % product)
+    date = "today"
+    logger.debug("Date: %s" % date)
+
+    if debugMode == 0:
+        logger.debug("Calling real NOAA API")
+        todays_tides_dict = getNoaaData(product, date)
+    else:
+        logger.debug("No stub today's tides NOAA API")
+        todays_tides_dict = getNoaaData(product, date)
+    logger.debug("Returned to main loop")
+
+    # create pretty print lines for each low/high tide
+    for x in todays_tides_dict['predictions']:
+        tide_string = getTideString(x)
+        logger.debug(tide_string)
+        
+
+
+
+
 
     ## Calculate difference in actual and predicted water level
     diff = level - predicted_level
@@ -312,12 +329,7 @@ try:
 
 
 ######################################################################################################################################################
-## Main tide event logic
-
-    ## instantiate email_required variable
-    email_required = 0
-    emailSent = False
-    
+## Main tide event logic   
     if tide_event != 'NONE':
         if already_in_tide_event == 0:
             logger.debug("Inserting new tide event into DB")
@@ -366,16 +378,20 @@ try:
         #keeping old code for reference
         #msg = MIMEText("The current water level is %sft which is %sft %s normal" % (level, diff, email_word_2))
         text = ("The current water level is %sft which is %sft %s normal" % (level, diff, email_word_2))
+        
+
+        # add today's tides
+        msgBody = "%s\n\nToday's Tides" % text
+        for x in todays_tides_dict['predictions']:
+            tide_string = getTideString(x)
+            msgBody = "%s\n%s" % (msgBody, tide_string)
         siteURL = homepage_url + station_id
-        msgBody = ("%s\n\nStation Home Page: %s" % (text, siteURL))
+        msgBody = ("%s\nStation Home Page: %s" % (msgBody, siteURL))
+            
         msg = MIMEText(msgBody)
         msg['Subject'] = 'Loeliger Cottage %s Tide Warning on %s' % (tide_event,today.strftime('%b %d %Y'))
         sendEmail(msg)
         emailSent = True
-        
-    # moved to finally block
-    #smtpserver.quit()    
-    
         
 
 except Exception as e:
