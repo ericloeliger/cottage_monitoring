@@ -9,6 +9,8 @@ This app consists of 4 main components:
    2. SQL interraction python script
    3. ini properties file
    4. MySQL database
+   
+This script was designed to be run in Production on a Linux machine (Raspberry Pi for me), although it can also be run on Windows.
 
 ### Prerequisites
 
